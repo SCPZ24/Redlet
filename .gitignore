@@ -1,0 +1,28 @@
+# Build directories
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+
+# Compiled objects and libraries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.pdb
+*.ilk
+*.exp
+*.dSYM/
+
+# Example executables (Unix binaries have no standard extension)
+/examples/tcp-client-server/client
+/examples/tcp-client-server/server
+
+# MacOS
+.DS_Store
