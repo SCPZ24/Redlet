@@ -143,7 +143,14 @@ public:
                     }
 
                     if(flag & (EPOLLIN | EPOLLHUP | EPOLLRDHUP)){
+                        const int err = cur_conn.read_buffer();
+                        if(err != 0){
+                            std::cerr<< "read fd:" << cur_fd << "error" << std::endl;
+                            delete_connection(cur_fd);
+                            continue;
+                        }
 
+                        
                     }
 
                     if(flag & EPOLLOUT){
