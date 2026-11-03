@@ -51,7 +51,7 @@ public:
         }
     }
 
-    int wait(int timeout_ms){
+    int wait(int timeout_ms = -1){
         int wait = epoll_wait(epoll_fd, ready_events.data(), MAX_EPOLL_EVENTS, timeout_ms);
         if(wait == -1){
             throw std::system_error(errno, std::system_category(), "epoll_wait");

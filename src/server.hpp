@@ -2,6 +2,9 @@
 
 #include "config.hpp"
 #include <cerrno>
+#include <cstdint>
+#include <fcntl.h>
+#include <iostream>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/epoll.h>
@@ -38,9 +41,37 @@ private:
         connection_map.erase(client_fd);
     }
 
+    void set_nonblock(int fd){
+        const int flags = fcntl(fd, F_GETFL, 0);
+        if(flags == -1){
+            throw std::system_error(errno, std::generic_category(), "fcntl F_GETFL");
+        }
+        if(fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1){
+            throw std::system_error(errno, std::generic_category(), "fcntl F_SETFL");
+        }
+    }
+
+    void accept_connections(){
+        while(true){
+            const int client_fd = accept(listen_fd, nullptr, nullptr);
+            if(client_fd >= 0){
+                set_nonblock(client_fd);
+                add_connection(client_fd);
+                continue;
+            }
+            if(errno == EAGAIN || errno == EWOULDBLOCK){
+                return;
+            }
+            if(errno == EINTR || errno == ECONNABORTED){
+                continue;
+            }
+            throw std::system_error(errno, std::generic_category(), "accept");
+        }
+    }
+
 public:
     Server(unsigned short _port = LISTENTING_PORT){
-        listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+        listen_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
         if(listen_fd < 0) {
             throw std::system_error(errno, std::generic_category(), "socket");
         }
@@ -61,7 +92,6 @@ public:
             close(listen_fd);
             throw std::system_error(error, std::generic_category(), "bind");
         }
-
     }
 
     void run(){
@@ -71,6 +101,59 @@ public:
         }
         event_loop.add(listen_fd, EPOLLIN);
 
+        while(true){
+            const int num_events = event_loop.wait();
+            const auto& ready_events = event_loop.get_ready_events();
+
+            for(int i = 0; i < num_events; ++i){
+                const int cur_fd = ready_events[i].data.fd;
+                const uint32_t flag = ready_events[i].events;
+                
+                if(cur_fd == listen_fd){
+                    if(flag & EPOLLIN){
+                        accept_connections();
+                    }
+                }else{
+                    auto it = connection_map.find(cur_fd);
+                    if(it == connection_map.end()){
+                        continue;
+                    }
+                    Connection& cur_conn = it->second;
+
+
+                    if(flag & EPOLLERR){
+                        int socket_error = 0;
+                        socklen_t error_length = sizeof(socket_error);
+                        if(getsockopt(cur_conn.get_fd(), SOL_SOCKET, SO_ERROR,
+                                      &socket_error, &error_length) == -1){
+                            const int error = errno;
+                            std::cerr << "getsockopt SO_ERROR fd=" << cur_fd
+                                      << ": " << std::error_code(error, std::generic_category()).message()
+                                      << '\n';
+                        }else if(socket_error != 0){
+                            std::cerr << "socket fd=" << cur_fd << ": "
+                                      << std::error_code(socket_error, std::generic_category()).message()
+                                      << '\n';
+                        }else{
+                            std::cerr << "EPOLLERR fd=" << cur_fd
+                                      << ": no pending SO_ERROR\n";
+                        }
+                        delete_connection(cur_fd);
+                        continue;
+                    }
+
+                    if(flag & (EPOLLIN | EPOLLHUP | EPOLLRDHUP)){
+
+                    }
+
+                    if(flag & EPOLLOUT){
+
+                    }
+
+
+                }
+            }
+        }
     }
 
     ~Server() {
