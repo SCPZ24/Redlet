@@ -2,6 +2,7 @@
 
 #include "../config.hpp"
 #include "../protocol/resp_parser.hpp"
+#include "../protocol/reply_writer.hpp"
 
 #include <cerrno>
 #include <cstddef>
@@ -10,6 +11,7 @@
 #include <string>
 #include <algorithm>
 #include <system_error>
+
 
 class Connection{
 private:
@@ -20,6 +22,10 @@ private:
 
     std::string incoming;
     std::size_t consumed_pos = 0;
+
+    std::string outcoming;
+    ReplyWriter reply;
+
     RespParser parser;
 
     int inline parse_input() {
@@ -27,13 +33,13 @@ private:
             incoming.data() + consumed_pos, incoming.size() - consumed_pos));
         if(status == ParseStatus::Invalid) return EPROTO;
         if(status == ParseStatus::Complete){
-            
+
         }
         return 0;
     }
 
 public:
-    Connection(int client_fd): fd(client_fd){
+    Connection(int client_fd): fd(client_fd), reply(outcoming){
         want_read = true;
         want_write = false;
         want_close = false;
