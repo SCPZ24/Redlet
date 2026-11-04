@@ -7,6 +7,7 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <string>
@@ -102,6 +103,9 @@ public:
             throw std::system_error(err, std::generic_category(), "read");
         }else if(rd == 0){
             want_read = false;
+            if(!want_write){
+                want_close = true;
+            }
             return 0;
         }else{
             incoming.append(chunk, static_cast<size_t>(rd));
@@ -112,7 +116,41 @@ public:
     }
 
     int write_buffer(){
-        return -1;
+        if(delivered_pos != 0){
+            outcoming.erase(0, delivered_pos);
+            delivered_pos = 0;
+        }
+
+        const size_t write_count = std::min(outcoming.size(), static_cast<std::size_t>(OUTPUT_BUFFER_SIZE));
+        ssize_t wr;
+        do{
+            wr = send(fd, outcoming.data(), write_count, MSG_NOSIGNAL);
+        }while(wr < 0 && errno == EINTR);
+
+        if(wr < 0){
+            const int err = errno;
+            if(err == EAGAIN || err == EWOULDBLOCK){
+                return 0;
+            }
+            throw std::system_error(err, std::generic_category(), "write");
+        }else if(wr == 0){
+            return 0;
+        }else{
+            delivered_pos += wr;
+
+            if(delivered_pos == outcoming.size()){
+                want_write = false;
+
+                outcoming.clear();
+                delivered_pos = 0;
+
+                if(want_read == false){
+                    want_close = true;
+                }
+            }
+
+            return 0;
+        }
     }
 
 

@@ -128,24 +128,22 @@ public:
                         continue;
                     }
 
-                    if(flag & (EPOLLIN | EPOLLHUP | EPOLLRDHUP)){
+                    if((flag & (EPOLLIN | EPOLLRDHUP | EPOLLHUP)) && cur_conn.ready_to_read()){
                         const int err = cur_conn.read_buffer();
                         if(err != 0){
                             std::cerr<< "read fd:" << cur_fd << "error" << std::endl;
                             delete_connection(cur_fd);
                             continue;
                         }
-
                     }
 
-                    if(flag & EPOLLOUT){
+                    if((flag & (EPOLLOUT | EPOLLHUP)) && cur_conn.ready_to_write()){
                         const int err = cur_conn.write_buffer();
                         if(err != 0){
                             std::cerr<< "write fd:" << cur_fd << "error" << std::endl;
                             delete_connection(cur_fd);
                             continue;
                         }
-
                     }
 
                     if(cur_conn.ready_to_close()){
