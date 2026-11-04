@@ -26,3 +26,6 @@ CMakeCache.txt
 
 # MacOS
 .DS_Store
+
+# Examples
+examples/build-your-own-redis-src
