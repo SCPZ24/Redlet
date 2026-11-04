@@ -33,15 +33,11 @@ private:
     }
 
     void inline delete_connection(int client_fd){
-        auto it = connection_map.find(client_fd);
-
-        if(it == connection_map.end()) return;
-
         event_loop.remove(client_fd);
         connection_map.erase(client_fd);
     }
 
-    void set_nonblock(int fd){
+    void inline set_nonblock(int fd){
         const int flags = fcntl(fd, F_GETFL, 0);
         if(flags == -1){
             throw std::system_error(errno, std::generic_category(), "fcntl F_GETFL");
@@ -51,7 +47,7 @@ private:
         }
     }
 
-    void accept_connections(){
+    void inline accept_connections(){
         while(true){
             const int client_fd = accept(listen_fd, nullptr, nullptr);
             if(client_fd >= 0){
@@ -114,26 +110,16 @@ public:
                         accept_connections();
                     }
                 }else{
-                    auto it = connection_map.find(cur_fd);
-                    if(it == connection_map.end()){
-                        continue;
-                    }
-                    Connection& cur_conn = it->second;
-
+                    Connection& cur_conn = connection_map.find(cur_fd)->second;
 
                     if(flag & EPOLLERR){
                         int socket_error = 0;
                         socklen_t error_length = sizeof(socket_error);
                         if(getsockopt(cur_conn.get_fd(), SOL_SOCKET, SO_ERROR,
                                       &socket_error, &error_length) == -1){
-                            const int error = errno;
-                            std::cerr << "getsockopt SO_ERROR fd=" << cur_fd
-                                      << ": " << std::error_code(error, std::generic_category()).message()
-                                      << '\n';
+                            throw std::system_error(errno, std::generic_category(), "getsockopt SO_ERROR");
                         }else if(socket_error != 0){
-                            std::cerr << "socket fd=" << cur_fd << ": "
-                                      << std::error_code(socket_error, std::generic_category()).message()
-                                      << '\n';
+                            throw std::system_error(socket_error, std::generic_category(), "socket SO_ERROR");
                         }else{
                             std::cerr << "EPOLLERR fd=" << cur_fd
                                       << ": no pending SO_ERROR\n";
@@ -150,14 +136,31 @@ public:
                             continue;
                         }
 
-                        
                     }
 
                     if(flag & EPOLLOUT){
+                        const int err = cur_conn.write_buffer();
+                        if(err != 0){
+                            std::cerr<< "write fd:" << cur_fd << "error" << std::endl;
+                            delete_connection(cur_fd);
+                            continue;
+                        }
 
                     }
 
+                    if(cur_conn.ready_to_close()){
+                        delete_connection(cur_fd);
+                        continue;
+                    }
 
+                    uint32_t events = 0;
+                    if(cur_conn.ready_to_read()){
+                        events |= EPOLLIN | EPOLLRDHUP;
+                    }
+                    if(cur_conn.ready_to_write()){
+                        events |= EPOLLOUT;
+                    }
+                    event_loop.modify(cur_fd, events);
                 }
             }
         }
