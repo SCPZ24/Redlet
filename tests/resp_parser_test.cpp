@@ -109,12 +109,7 @@ void connection_pipeline() {
     const auto input = first + second;
     assert(write(sockets[1], input.data(), input.size()) == static_cast<ssize_t>(input.size()));
     assert(conn.read_buffer() == 0);
-    auto arg = conn.argument(0);
-    assert(std::string(arg.data(), arg.size()) == "PING");
-    assert(conn.finish_request() == 0);
-    arg = conn.argument(1);
-    assert(std::string(arg.data(), arg.size()) == "key");
-    assert(conn.finish_request() == 0);
+    assert(conn.pending_output() == "+PONG\r\n$-1\r\n");
     close(sockets[1]);
     assert(conn.read_buffer() == 0);
     assert(!conn.ready_to_read());
@@ -124,13 +119,13 @@ void connection_fragmentation() {
     int sockets[2];
     assert(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, sockets) == 0);
     Connection conn(sockets[0]);
-    const auto input = request({std::string(INPUT_BUFFER_SIZE * 3, 'x')});
+    const auto input = request({"PING", std::string(INPUT_BUFFER_SIZE * 3, 'x')});
     for (char byte : input) {
         assert(write(sockets[1], &byte, 1) == 1);
         assert(conn.read_buffer() == 0);
     }
-    assert(conn.argument(0).size() == INPUT_BUFFER_SIZE * 3);
-    assert(conn.finish_request() == 0);
+    assert(conn.pending_output() == "$" + std::to_string(INPUT_BUFFER_SIZE * 3) + "\r\n"
+           + std::string(INPUT_BUFFER_SIZE * 3, 'x') + "\r\n");
     const std::string partial = "*1\r\n$5\r\nab";
     assert(write(sockets[1], partial.data(), partial.size()) == static_cast<ssize_t>(partial.size()));
     assert(conn.read_buffer() == 0);
@@ -148,14 +143,11 @@ void buffered_partial_successor() {
     const auto first = request({"PING"}) + next.substr(0, 8);
     assert(write(sockets[1], first.data(), first.size()) == static_cast<ssize_t>(first.size()));
     assert(conn.read_buffer() == 0);
-    assert(conn.finish_request() == 0);
     // The next read compacts the consumed prefix while keeping relative parser offsets.
     const auto tail = next.substr(8);
     assert(write(sockets[1], tail.data(), tail.size()) == static_cast<ssize_t>(tail.size()));
     assert(conn.read_buffer() == 0);
-    auto arg = conn.argument(2);
-    assert(std::string(arg.data(), arg.size()) == std::string("a\0b", 3));
-    assert(conn.finish_request() == 0);
+    assert(conn.pending_output() == "+PONG\r\n+OK\r\n");
     assert(write(sockets[1], "!", 1) == 1);
     assert(conn.read_buffer() == EPROTO);
     close(sockets[1]);

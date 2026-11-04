@@ -3,6 +3,7 @@
 #include "../config.hpp"
 #include "../protocol/resp_parser.hpp"
 #include "../protocol/reply_writer.hpp"
+#include "../command/dispatcher.hpp"
 
 #include <cerrno>
 #include <cstddef>
@@ -24,18 +25,45 @@ private:
     std::size_t consumed_pos = 0;
 
     std::string outcoming;
+    std::size_t delivered_pos = 0;
+
     ReplyWriter reply;
 
     RespParser parser;
 
     int inline parse_input() {
-        const auto status = parser.parse(ByteRange(
-            incoming.data() + consumed_pos, incoming.size() - consumed_pos));
-        if(status == ParseStatus::Invalid) return EPROTO;
-        if(status == ParseStatus::Complete){
+        while(true){
+            const ParseStatus status = parser.parse({incoming.data() + consumed_pos, incoming.size() - consumed_pos});
 
+            if(status == ParseStatus::NeedMore){
+                return 0;
+            }
+
+            if(status == ParseStatus::Complete){
+                if(!dispatch(
+                    {incoming.data() + consumed_pos, parser.request_size()},
+                    parser.arguments(),
+                    reply)){
+                        return ENOBUFS;
+                    }
+                consumed_pos += parser.request_size();
+                parser.reset();
+
+                want_write = true;
+
+                if(consumed_pos == incoming.size()){
+                    incoming.clear();
+                    consumed_pos = 0;
+
+                    return 0;
+                }
+                continue;
+            }
+
+            if(status == ParseStatus::Invalid){
+                return EPROTO;
+            }
         }
-        return 0;
     }
 
 public:
@@ -83,20 +111,6 @@ public:
         return 0;
     }
 
-    // Call only after dispatch and reply encoding finish; invalidates borrowed views.
-    // Immediately parses an already-buffered pipeline successor.
-    int finish_request() {
-        consumed_pos += parser.request_size();
-        parser.reset();
-        if(consumed_pos == incoming.size()){
-            incoming.clear();
-            consumed_pos = 0;
-        }
-        return parse_input();
-    }
-    // This funcition is a draft, may be deleted later. Use it unless we make clear what could it do.
-
-
     int write_buffer(){
         return -1;
     }
@@ -125,6 +139,10 @@ public:
 
 
 #ifdef test
+
+    const std::string& pending_output() const {
+        return outcoming;
+    }
 
     ByteRange argument(std::size_t index) const {
         const auto& range = parser.arguments()[index];

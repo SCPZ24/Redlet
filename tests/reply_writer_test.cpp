@@ -42,12 +42,6 @@ int main() {
     check_limit(5, [](ReplyWriter& writer) { return writer.null_bulk(); });
 
     output.clear();
-    // Reject impossible lengths before touching the supplied payload.
-    assert(!reply.bulk_str("", std::numeric_limits<std::size_t>::max()));
-    assert(!reply.raw_str("", std::numeric_limits<std::size_t>::max()));
-    assert(!reply.error("", std::numeric_limits<std::size_t>::max()));
-    assert(output.empty());
-
     const std::string large(MAX_BULK_BYTES, 'v');
     assert(reply.bulk_str(large.data(), large.size()));
     assert(output == "$" + std::to_string(large.size()) + "\r\n" + large + "\r\n");

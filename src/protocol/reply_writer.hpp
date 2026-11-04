@@ -23,7 +23,7 @@ private:
 public:
     ReplyWriter(std::string& outcoming): output(outcoming){}
 
-    bool inline raw_str(const char* data, std::size_t size){
+    bool inline raw_str(const char* data, std::size_t size) const{
         if(!can_append(size, 3)) return false;
 
         output.push_back('+');
@@ -32,7 +32,7 @@ public:
         return true;
     }
 
-    bool inline integer(std::int64_t value){
+    bool inline integer(std::int64_t value) const{
         // Enough for all decimal digits and the sign, including INT64_MIN.
         char digits[std::numeric_limits<std::int64_t>::digits10 + 2];
         const auto result = std::to_chars(digits, digits + sizeof(digits), value);
@@ -44,7 +44,7 @@ public:
         return true;
     }
 
-    bool inline error(const char* data, std::size_t size){
+    bool inline error(const char* data, std::size_t size) const{
         if(!can_append(size, 3)) return false;
         output.push_back('-');
         output.append(data, size);
@@ -52,7 +52,7 @@ public:
         return true;
     }
 
-    bool inline bulk_str(const char* data, std::size_t size){
+    bool inline bulk_str(const char* data, std::size_t size) const{
         char digits[std::numeric_limits<std::size_t>::digits10 + 1];
         const auto result = std::to_chars(digits, digits + sizeof(digits), size);
         const auto length_size = static_cast<std::size_t>(result.ptr - digits);
@@ -65,12 +65,11 @@ public:
         return true;
     }
 
-    bool inline null_bulk(){
+    bool inline null_bulk() const{
         if(!can_append(0, 5)) return false;
         output.append("$-1\r\n");
         return true;
     }
-
 
     ReplyWriter(const ReplyWriter&) = delete;
     ReplyWriter& operator=(const ReplyWriter&) = delete;
