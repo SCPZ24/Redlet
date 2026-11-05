@@ -1,4 +1,5 @@
 # Build directories
+/redlet
 build/
 cmake-build-*/
 CMakeFiles/
@@ -29,3 +30,6 @@ CMakeCache.txt
 
 # Examples
 examples/build-your-own-redis-src
+
+# Build
+redlet
