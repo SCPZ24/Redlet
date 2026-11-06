@@ -5,6 +5,7 @@
 #include "hash_table.hpp"
 #include <cstddef>
 #include <cstdlib>
+#include <functional>
 #include <string>
 
 
@@ -34,13 +35,14 @@ public:
 
 
     const std::string* get(const std::string& key){
+        const std::size_t cur_hash = std::hash<std::string>{}(key);
         const auto match = [&key](Node* node) -> bool{
             const HashNode* entry = reinterpret_cast<HashNode*>(node);
             return entry->key == key;
         };
 
         if(!rehashing){
-            Node* search = current_map.find(DJB2(key), match);
+            Node* search = current_map.find(cur_hash, match);
 
             if(search == nullptr){
                 return nullptr;
@@ -48,7 +50,6 @@ public:
                 return &reinterpret_cast<HashNode*>(search)->value;
             }
         }else{
-            const size_t cur_hash = DJB2(key);
             Node* search = current_map.find(cur_hash, match);
             if(search == nullptr) search = target_map.find(cur_hash, match);
 
@@ -63,16 +64,17 @@ public:
     }
 
     void set(const std::string& key, const std::string& val){
+        const std::size_t cur_hash = std::hash<std::string>{}(key);
         const auto match = [&key](Node* node) -> bool{
             const HashNode* entry = reinterpret_cast<HashNode*>(node);
             return entry->key == key;
         };
 
         if(!rehashing){
-            Node* search = current_map.find(DJB2(key), match);
+            Node* search = current_map.find(cur_hash, match);
 
             if(search == nullptr){
-                HashNode* temp = new HashNode(key, val);
+                HashNode* temp = new HashNode(key, val, cur_hash);
                 current_map.insert(&temp->node);
                 ++num_elements;
 
@@ -85,7 +87,6 @@ public:
                 reinterpret_cast<HashNode*>(search)->value = val;
             }
         }else{
-            const std::size_t cur_hash = DJB2(key);
 
             Node* search = current_map.find(cur_hash, match);
             if(search == nullptr) search = target_map.find(cur_hash, match);
@@ -93,7 +94,7 @@ public:
             if(search != nullptr){
                 reinterpret_cast<HashNode*>(search)->value = val;
             }else{
-                HashNode* temp = new HashNode(key, val);
+                HashNode* temp = new HashNode(key, val, cur_hash);
 
                 target_map.insert(&temp->node);
                 ++num_elements;
@@ -104,13 +105,14 @@ public:
     }
 
     bool del(const std::string& key){
+        const std::size_t cur_hash = std::hash<std::string>{}(key);
         const auto match = [&key](Node* node) -> bool{
             const HashNode* entry = reinterpret_cast<HashNode*>(node);
             return entry->key == key;
         };
 
         if(!rehashing){
-            Node* search = current_map.extract(DJB2(key), match);
+            Node* search = current_map.extract(cur_hash, match);
 
             if(search == nullptr){
                 return false;
@@ -127,7 +129,6 @@ public:
                 return true;
             }
         }else{
-            std::size_t cur_hash = DJB2(key);
 
             Node* search = current_map.extract(cur_hash, match);
             if(search == nullptr) search = target_map.extract(cur_hash, match);
