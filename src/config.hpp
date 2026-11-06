@@ -13,5 +13,9 @@ inline constexpr unsigned short LISTENTING_PORT = 6379;
 
 inline constexpr int MAX_EPOLL_EVENTS = 1024;
 
-constexpr int INPUT_BUFFER_SIZE = 1024;
-constexpr int OUTPUT_BUFFER_SIZE = 1024;
+inline constexpr int INPUT_BUFFER_SIZE = 1024;
+inline constexpr int OUTPUT_BUFFER_SIZE = 1024;
+
+
+inline constexpr double EXPANSION_BOUND = 1;
+inline constexpr double SHRINL_BOUND = 0.25;
