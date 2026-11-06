@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <functional>
 #include <string>
+#include <string_view>
 
 
 
@@ -34,8 +35,8 @@ public:
     ProgressiveRehashMap(): current_map(INITIAL_NUM_BUCKETS), target_map(), rehashing(false), num_elements(0) {}
 
 
-    const std::string* get(const std::string& key){
-        const std::size_t cur_hash = std::hash<std::string>{}(key);
+    const std::string* get(std::string_view key){
+        const std::size_t cur_hash = std::hash<std::string_view>{}(key);
         const auto match = [&key](Node* node) -> bool{
             const HashNode* entry = reinterpret_cast<HashNode*>(node);
             return entry->key == key;
@@ -63,8 +64,8 @@ public:
         }
     }
 
-    void set(const std::string& key, const std::string& val){
-        const std::size_t cur_hash = std::hash<std::string>{}(key);
+    void set(std::string_view key, std::string_view val){
+        const std::size_t cur_hash = std::hash<std::string_view>{}(key);
         const auto match = [&key](Node* node) -> bool{
             const HashNode* entry = reinterpret_cast<HashNode*>(node);
             return entry->key == key;
@@ -104,8 +105,8 @@ public:
         }
     }
 
-    bool del(const std::string& key){
-        const std::size_t cur_hash = std::hash<std::string>{}(key);
+    bool del(std::string_view key){
+        const std::size_t cur_hash = std::hash<std::string_view>{}(key);
         const auto match = [&key](Node* node) -> bool{
             const HashNode* entry = reinterpret_cast<HashNode*>(node);
             return entry->key == key;

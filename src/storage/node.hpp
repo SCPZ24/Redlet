@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 
 
 
@@ -23,5 +24,5 @@ struct HashNode{
     std::string key;
     std::string value;
 
-    HashNode(const std::string& _key, const std::string& _value, size_t _hash): node(_hash, nullptr), key(_key), value(_value){}
+    HashNode(std::string_view _key, std::string_view _value, size_t _hash): node(_hash, nullptr), key(_key), value(_value){}
 };

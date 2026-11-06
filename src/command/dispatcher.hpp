@@ -35,21 +35,19 @@ bool inline dispatch(ByteRange request, const std::vector<ArgumentRange>& argume
     }
     if(matches("GET")){
         if(arguments.size() != 2) return reply.error(arity_error, sizeof(arity_error) - 1);
-        std::string key(argument(1));
-        const auto* value = Database.get(key);
+        const auto* value = Database.get(argument(1));
         return value ? reply.bulk_str(value->data(), value->size()) : reply.null_bulk();
     }
     if(matches("SET")){
         if(arguments.size() != 3) return reply.error(arity_error, sizeof(arity_error) - 1);
-        Database.set(std::string(argument(1)), std::string(argument(2)));
+        Database.set(argument(1), argument(2));
         return reply.raw_str("OK", 2);
     }
     if(matches("DEL")){
         if(arguments.size() < 2) return reply.error(arity_error, sizeof(arity_error) - 1);
         std::int64_t deleted = 0;
         for(std::size_t i = 1; i < arguments.size(); ++i){
-            std::string key(argument(i));
-            deleted += Database.del(key);
+            deleted += Database.del(argument(i));
         }
         return reply.integer(deleted);
     }

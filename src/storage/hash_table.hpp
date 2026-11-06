@@ -1,6 +1,6 @@
 #pragma once
 
-#include "node.cpp"
+#include "node.hpp"
 #include <cstddef>
 #include <cstdlib>
 #include <system_error>

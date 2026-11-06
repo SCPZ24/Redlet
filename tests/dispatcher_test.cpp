@@ -35,6 +35,21 @@ int main() {
     check({"SET", "", "empty key"}, "+OK\r\n");
     check({"GET", ""}, "$9\r\nempty key\r\n");
 
+    // Stored strings must outlive borrowed, non-null-terminated request slices.
+    const std::string long_key = std::string(64, 'k') + binary;
+    const std::string long_value = std::string(128, 'v') + binary;
+    std::string backing = long_key + long_value + "trailer";
+    Database.set(std::string_view(backing.data(), long_key.size()),
+                 std::string_view(backing.data() + long_key.size(), long_value.size()));
+    backing.assign(backing.size(), 'x');
+    check({"GET", long_key}, "$" + std::to_string(long_value.size()) + "\r\n" + long_value + "\r\n");
+    const std::string updated_value = std::string(192, 'u') + binary;
+    backing = updated_value + "trailer";
+    Database.set(long_key, std::string_view(backing.data(), updated_value.size()));
+    backing.assign(backing.size(), 'x');
+    check({"GET", long_key}, "$" + std::to_string(updated_value.size()) + "\r\n" + updated_value + "\r\n");
+    check({"DEL", long_key}, ":1\r\n");
+
     const std::string arity = "-ERR wrong number of arguments\r\n";
     for(const auto& args : std::vector<std::vector<std::string>>{
             {"PING", "a", "b"}, {"GET"}, {"GET", "a", "b"},
