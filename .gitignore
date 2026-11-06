@@ -33,3 +33,4 @@ examples/build-your-own-redis-src
 
 # Build
 redlet
+redlet-progressive-rehash

@@ -1,27 +1,25 @@
 #pragma once
 
-#include <unordered_map>
 #include <string>
 
+#include "progressive_rehash_map.hpp"
 
 
 class Database{
 private:
-    std::unordered_map<std::string, std::string> data;
-
+    ProgressiveRehashMap data;
 
 public:
     const std::string* get(std::string& key){
-        auto it = data.find(key);
-        return it == data.end() ? nullptr : &it->second;
+        return data.get(key);
     }
 
     void set(const std::string& key, const std::string& value){
-        data.insert_or_assign(key, value);
+        data.set(key, value);
     }
 
     bool del(std::string& key){
-        return data.erase(key) != 0;
+        return data.del(key);
     }
 };
 
