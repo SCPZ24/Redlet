@@ -17,5 +17,11 @@ inline constexpr int INPUT_BUFFER_SIZE = 1024;
 inline constexpr int OUTPUT_BUFFER_SIZE = 1024;
 
 
-inline constexpr double EXPANSION_BOUND = 1;
-inline constexpr double SHRINL_BOUND = 0.25;
+inline constexpr double EXPAND_BOUND = 1;
+inline constexpr double SHRINK_BOUND = 0.25;
+
+inline constexpr size_t INITIAL_NUM_BUCKETS = 8;
+inline constexpr size_t MINIMAL_NUM_BUCKETS = 4;
+
+inline constexpr size_t DEFAULT_BUDGET_NODE = 128;
+inline constexpr size_t DEFAULT_BUDGET_BUCKET = 256;

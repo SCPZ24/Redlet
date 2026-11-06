@@ -6,7 +6,7 @@
 
 
 
-size_t DJB2(const std::string& str){
+size_t inline DJB2(const std::string& str){
     size_t hash = 5381;
     for(unsigned char byte: str){
         hash = (hash << 5) + hash + byte;
@@ -32,4 +32,6 @@ struct HashNode{
     Node node;
     std::string key;
     std::string value;
+
+    HashNode(const std::string& _key, const std::string& _value): node(_key, nullptr), key(_key), value(_value){}
 };

@@ -14,6 +14,8 @@ private:
 
     std::size_t num_buckets = 0;
 public:
+    HashTable() = default;
+
     HashTable(size_t _size): num_buckets(_size){
         buckets = static_cast<Node**>(std::calloc(_size, sizeof(Node*)));
 
@@ -23,7 +25,7 @@ public:
     }
 
     template<typename Match>
-    Node* find(std::size_t hash, Match match){
+    Node* find(std::size_t hash, const Match& match){
         const std::size_t bucket = hash & (num_buckets - 1);
         Node* current_node = buckets[bucket];
 
@@ -46,7 +48,7 @@ public:
     }
 
     template<typename Match>
-    Node* extract(std::size_t hash, Match match){
+    Node* extract(std::size_t hash, const Match& match){
         const std::size_t bucket = hash & (num_buckets - 1);
         Node** ptr_current_node = &buckets[bucket];
 
@@ -87,6 +89,19 @@ public:
         return num_buckets;
     }
 
+    // dispose owns node destruction and must not throw.
+    template<typename Dispose>
+    void clear(const Dispose& dispose) noexcept {
+        for (std::size_t bucket = 0; bucket < num_buckets; ++bucket) {
+            while (buckets[bucket] != nullptr) {
+                Node* node = buckets[bucket];
+                buckets[bucket] = node->next;
+                node->next = nullptr;
+                dispose(node);
+            }
+        }
+    }
+
     // Intrusive nodes belong to their enclosing objects; only free the bucket array.
     ~HashTable(){
         std::free(buckets);
@@ -99,6 +114,10 @@ public:
         buckets = std::exchange(src.buckets, nullptr);
         num_buckets = std::exchange(src.num_buckets, 0);
         return *this;
+    }
+
+    HashTable& operator=(HashTable&& src){
+        return operator=(src);
     }
 
     HashTable(const HashTable& src) = delete;
