@@ -35,11 +35,29 @@ int main() {
     expected.append("\r\n$0\r\n\r\n$-1\r\n");
     assert(output == expected);
 
+    // A complete MGET-style RESP2 reply, including a missing key.
+    output.clear();
+    assert(reply.array_header(3));
+    assert(reply.bulk_str("v1", 2));
+    assert(reply.null_bulk());
+    assert(reply.bulk_str("v3", 2));
+    assert(output == "*3\r\n$2\r\nv1\r\n$-1\r\n$2\r\nv3\r\n");
+
+    output.clear();
+    assert(reply.array_header(0));
+    assert(output == "*0\r\n");
+
+    output.clear();
+    const auto max_count = std::numeric_limits<std::size_t>::max();
+    assert(reply.array_header(max_count));
+    assert(output == "*" + std::to_string(max_count) + "\r\n");
+
     check_limit(5, [](ReplyWriter& writer) { return writer.raw_str("OK", 2); });
     check_limit(6, [](ReplyWriter& writer) { return writer.error("ERR", 3); });
     check_limit(5, [](ReplyWriter& writer) { return writer.integer(-1); });
     check_limit(9, [](ReplyWriter& writer) { return writer.bulk_str("YES", 3); });
     check_limit(5, [](ReplyWriter& writer) { return writer.null_bulk(); });
+    check_limit(5, [](ReplyWriter& writer) { return writer.array_header(12); });
 
     output.clear();
     const std::string large(MAX_BULK_BYTES, 'v');

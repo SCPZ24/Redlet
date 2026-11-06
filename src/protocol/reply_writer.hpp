@@ -65,6 +65,17 @@ public:
         return true;
     }
 
+    bool inline array_header(std::size_t count) const{
+        char digits[std::numeric_limits<std::size_t>::digits10 + 1];
+        const auto result = std::to_chars(digits, digits + sizeof(digits), count);
+        const auto size = static_cast<std::size_t>(result.ptr - digits);
+        if(!can_append(size, 3)) return false;
+        output.push_back('*');
+        output.append(digits, size);
+        output.append("\r\n");
+        return true;
+    }
+
     bool inline null_bulk() const{
         if(!can_append(0, 5)) return false;
         output.append("$-1\r\n");
