@@ -124,9 +124,9 @@ struct AVLHook{
         }
     }
 
-    AVLHook* next(){
+    AVLHook* next() const{
         if(right == nullptr){
-            AVLHook* current = this;
+            const AVLHook* current = this;
             while(current->parent != nullptr && current == current->parent->right){
                 current = current->parent;
             }
@@ -157,11 +157,9 @@ struct AVLHook{
 
 
 struct AVLNode: public AVLHook, public HashHook{
-private:
     std::string key;
     double score;
 
-public:
     AVLNode(std::string_view _key, double _score): HashHook(0, nullptr),
     key(_key), score(_score) {}
 };
