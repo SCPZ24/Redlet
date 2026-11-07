@@ -162,6 +162,6 @@ private:
     double score;
 
 public:
-    AVLNode(std::string_view _key, double _score, std::size_t _hash): 
-    HashHook(_hash, nullptr), key(_key), score(_score) {}
+    AVLNode(std::string_view _key, double _score): HashHook(0, nullptr),
+    key(_key), score(_score) {}
 };

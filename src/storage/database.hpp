@@ -48,7 +48,8 @@ public:
                 delete sorted_set;
             }
         }else{
-            data.insert(key, std::string(value));
+            entry = new Entry(key, std::string(value));
+            data.insert(entry);
         }
     }
 
