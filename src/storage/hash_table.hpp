@@ -89,7 +89,6 @@ public:
         return num_buckets;
     }
 
-    // dispose owns node destruction and must not throw.
     template<typename Dispose>
     void clear(const Dispose& dispose) noexcept {
         for (std::size_t bucket = 0; bucket < num_buckets; ++bucket) {

@@ -35,8 +35,13 @@ bool inline dispatch(ByteRange request, const std::vector<ArgumentRange>& argume
     }
     if(matches("GET")){
         if(arguments.size() != 2) return reply.error(arity_error, sizeof(arity_error) - 1);
-        const auto* value = Database.get(argument(1));
-        return value ? reply.bulk_str(value->data(), value->size()) : reply.null_bulk();
+        const auto result = Database.get(argument(1));
+        if(result.status == RequestStatus::Missing) return reply.null_bulk();
+        if(result.status == RequestStatus::WrongType){
+            constexpr char error[] = "WRONGTYPE Operation against a key holding the wrong kind of value";
+            return reply.error(error, sizeof(error) - 1);
+        }
+        return reply.bulk_str(result.value->data(), result.value->size());
     }
     if(matches("SET")){
         if(arguments.size() != 3) return reply.error(arity_error, sizeof(arity_error) - 1);

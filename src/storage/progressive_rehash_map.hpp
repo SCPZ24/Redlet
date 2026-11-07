@@ -9,6 +9,7 @@
 #include <functional>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 
 
@@ -75,7 +76,8 @@ public:
         }
     }
 
-    bool insert(std::string_view key, std::string_view value){
+    template<typename ValueType>
+    bool insert(std::string_view key, ValueType&& value){
         const std::size_t cur_hash = std::hash<std::string_view>{}(key);
         const auto match = [&key](HashHook* node) -> bool{
             const Entry* entry = static_cast<Entry*>(node);
@@ -92,7 +94,7 @@ public:
                     rehashing = true;
                     cursor = 0;
                 }
-                Entry* entry = new Entry(key, value);
+                Entry* entry = new Entry(key, std::forward<ValueType>(value));
                 entry->hash = cur_hash;
                 current_map.insert(entry);
                 ++num_elements;
@@ -108,7 +110,7 @@ public:
                 chechout_rehash();
                 return false;
             }else{
-                Entry* entry = new Entry(key, value);
+                Entry* entry = new Entry(key, std::forward<ValueType>(value));
                 entry->hash = cur_hash;
                 target_map.insert(entry);
                 ++num_elements;
