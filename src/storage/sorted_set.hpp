@@ -105,6 +105,10 @@ public:
         }
     }
 
+    std::size_t size() const{
+        return avl_tree.size();
+    }
+
     ~SortedSet(){
         hash_map.clear([](AVLNode* node) noexcept {
             delete node;

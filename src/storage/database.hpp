@@ -3,6 +3,9 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <cmath>
+#include <cstdint>
+#include <vector>
 
 #include "progressive_rehash_map.hpp"
 #include "sorted_set.hpp"
@@ -21,6 +24,11 @@ struct GetResult{
     const std::string* value;
 };
 
+template<typename T>
+struct RequestResult{
+    RequestStatus status;
+    T value;
+};
 
 class Database{
 private:
@@ -64,7 +72,68 @@ public:
         return true;
     }
 
-    // TODO: 补全ZADD ZREM ZSCORE ZRANGE ZRANK接口
+    RequestResult<std::size_t> zadd(std::string_view key, const std::vector<Member>& members){
+        for(const auto& member : members){
+            if(std::isnan(member.score)) return {RequestStatus::InvalidScore, 0};
+        }
+        if(members.empty()) return {RequestStatus::OK, 0};
+
+        Entry* entry = data.find(key);
+        if(entry == nullptr){
+            entry = new Entry(key, new SortedSet);
+            data.insert(entry);
+        }
+        auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
+        if(sorted_set == nullptr) return {RequestStatus::WrongType, 0};
+
+        std::size_t added = 0;
+        for(const auto& member : members){
+            added += (*sorted_set)->add(member.member, member.score);
+        }
+        return {RequestStatus::OK, added};
+    }
+
+    RequestResult<std::size_t> zrem(std::string_view key, const std::vector<std::string_view>& members){
+        Entry* entry = data.find(key);
+        if(entry == nullptr) return {RequestStatus::OK, 0};
+        auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
+        if(sorted_set == nullptr) return {RequestStatus::WrongType, 0};
+
+        std::size_t removed = 0;
+        for(const auto member : members){
+            removed += (*sorted_set)->remove(member);
+        }
+        if((*sorted_set)->size() == 0) del(key);
+        return {RequestStatus::OK, removed};
+    }
+
+    RequestResult<double> zscore(std::string_view key, std::string_view member){
+        Entry* entry = data.find(key);
+        if(entry == nullptr) return {RequestStatus::Missing, 0};
+        auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
+        if(sorted_set == nullptr) return {RequestStatus::WrongType, 0};
+        const auto score = (*sorted_set)->score(member);
+        if(!score) return {RequestStatus::Missing, 0};
+        return {RequestStatus::OK, *score};
+    }
+
+    RequestResult<std::vector<Member>> zrange(std::string_view key, std::int64_t start, std::int64_t end){
+        Entry* entry = data.find(key);
+        if(entry == nullptr) return {RequestStatus::OK, {}};
+        auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
+        if(sorted_set == nullptr) return {RequestStatus::WrongType, {}};
+        return {RequestStatus::OK, (*sorted_set)->range(start, end)};
+    }
+
+    RequestResult<std::size_t> zrank(std::string_view key, std::string_view member){
+        Entry* entry = data.find(key);
+        if(entry == nullptr) return {RequestStatus::Missing, 0};
+        auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
+        if(sorted_set == nullptr) return {RequestStatus::WrongType, 0};
+        const auto rank = (*sorted_set)->rank(member);
+        if(!rank) return {RequestStatus::Missing, 0};
+        return {RequestStatus::OK, *rank};
+    }
 
 
     ~Database(){
