@@ -4,14 +4,15 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 
 
 
-struct Node{
+struct HashHook{
     size_t hash;
-    Node* next;
+    HashHook* next;
 
-    Node(size_t _hash, Node* _next): hash(_hash), next(_next){}
+    HashHook(size_t _hash, HashHook* _next): hash(_hash), next(_next){}
 };
 
 
@@ -19,10 +20,11 @@ struct Node{
 
 
 
-struct HashNode{
-    Node node;
+template<typename Value>
+struct HashNode : HashHook{
     std::string key;
-    std::string value;
+    Value value;
 
-    HashNode(std::string_view _key, std::string_view _value, size_t _hash): node(_hash, nullptr), key(_key), value(_value){}
+    template<typename T>
+    HashNode(std::string_view _key, T&& _value): HashHook(0, nullptr), key(_key), value(std::forward<T>(_value)){}
 };

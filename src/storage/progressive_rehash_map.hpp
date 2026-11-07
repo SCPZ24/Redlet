@@ -3,15 +3,21 @@
 #include "../config.hpp"
 
 #include "hash_table.hpp"
+#include "node.hpp"
 #include <cstddef>
 #include <cstdlib>
 #include <functional>
-#include <string>
 #include <string_view>
+#include <type_traits>
 
 
 
+// Entry是整个业务单元。
+// 自身的key, value是业务数据，本质为存储的对象
+// 继承自父类的是索引元（可以多继承），用于插入哈希表、AVL等定位器。
+template<typename Entry>
 class ProgressiveRehashMap{
+    static_assert(std::is_convertible_v<Entry*, HashHook*>);
 private:
     HashTable current_map;
     HashTable target_map;
@@ -32,26 +38,31 @@ private:
     }
 
 public:
-    ProgressiveRehashMap(): current_map(INITIAL_NUM_BUCKETS), target_map(), rehashing(false), num_elements(0) {}
+    ProgressiveRehashMap():
+        current_map(INITIAL_NUM_BUCKETS),
+        target_map(),
+        rehashing(false),
+        num_elements(0)
+        {}
 
 
-    const std::string* get(std::string_view key){
+    Entry* find(std::string_view key){
         const std::size_t cur_hash = std::hash<std::string_view>{}(key);
-        const auto match = [&key](Node* node) -> bool{
-            const HashNode* entry = reinterpret_cast<HashNode*>(node);
+        const auto match = [&key](HashHook* node) -> bool{
+            const Entry* entry = static_cast<Entry*>(node);
             return entry->key == key;
         };
 
         if(!rehashing){
-            Node* search = current_map.find(cur_hash, match);
+            HashHook* search = current_map.find(cur_hash, match);
 
             if(search == nullptr){
                 return nullptr;
             }else{
-                return &reinterpret_cast<HashNode*>(search)->value;
+                return static_cast<Entry*>(search);
             }
         }else{
-            Node* search = current_map.find(cur_hash, match);
+            HashHook* search = current_map.find(cur_hash, match);
             if(search == nullptr) search = target_map.find(cur_hash, match);
 
             chechout_rehash();
@@ -59,66 +70,69 @@ public:
             if(search == nullptr){
                 return nullptr;
             }else{
-                return &reinterpret_cast<HashNode*>(search)->value;
+                return static_cast<Entry*>(search);
             }
         }
     }
 
-    void set(std::string_view key, std::string_view val){
+    bool insert(std::string_view key, std::string_view value){
         const std::size_t cur_hash = std::hash<std::string_view>{}(key);
-        const auto match = [&key](Node* node) -> bool{
-            const HashNode* entry = reinterpret_cast<HashNode*>(node);
+        const auto match = [&key](HashHook* node) -> bool{
+            const Entry* entry = static_cast<Entry*>(node);
             return entry->key == key;
         };
 
         if(!rehashing){
-            Node* search = current_map.find(cur_hash, match);
+            HashHook* search = current_map.find(cur_hash, match);
 
             if(search == nullptr){
-                HashNode* temp = new HashNode(key, val, cur_hash);
-                current_map.insert(&temp->node);
-                ++num_elements;
-
-                if(static_cast<double>(num_elements) / current_map.size() > EXPAND_BOUND){
+                // Allocate before linking so failure leaves entry unlinked.
+                if(static_cast<double>(num_elements + 1) / current_map.size() > EXPAND_BOUND){
                     target_map = HashTable(current_map.size() << 1);
                     rehashing = true;
                     cursor = 0;
                 }
+                Entry* entry = new Entry(key, value);
+                entry->hash = cur_hash;
+                current_map.insert(entry);
+                ++num_elements;
             }else{
-                reinterpret_cast<HashNode*>(search)->value = val;
+                return false;
             }
         }else{
 
-            Node* search = current_map.find(cur_hash, match);
+            HashHook* search = current_map.find(cur_hash, match);
             if(search == nullptr) search = target_map.find(cur_hash, match);
 
             if(search != nullptr){
-                reinterpret_cast<HashNode*>(search)->value = val;
+                chechout_rehash();
+                return false;
             }else{
-                HashNode* temp = new HashNode(key, val, cur_hash);
-
-                target_map.insert(&temp->node);
+                Entry* entry = new Entry(key, value);
+                entry->hash = cur_hash;
+                target_map.insert(entry);
                 ++num_elements;
             }
 
             chechout_rehash();
         }
+        return true;
     }
 
-    bool del(std::string_view key){
+    // Unlink without destroying the entry.
+    Entry* extract(std::string_view key){
         const std::size_t cur_hash = std::hash<std::string_view>{}(key);
-        const auto match = [&key](Node* node) -> bool{
-            const HashNode* entry = reinterpret_cast<HashNode*>(node);
+        const auto match = [&key](HashHook* node) -> bool{
+            const Entry* entry = static_cast<Entry*>(node);
             return entry->key == key;
         };
 
         if(!rehashing){
-            Node* search = current_map.extract(cur_hash, match);
+            HashHook* search = current_map.extract(cur_hash, match);
 
             if(search == nullptr){
-                return false;
+                return nullptr;
             }else{
-                delete reinterpret_cast<HashNode*>(search);
                 --num_elements;
 
                 if(static_cast<double>(num_elements) / current_map.size() < SHRINK_BOUND && current_map.size() > MINIMAL_NUM_BUCKETS){
@@ -127,33 +141,35 @@ public:
                     cursor = 0;
                 }
 
-                return true;
+                return static_cast<Entry*>(search);
             }
         }else{
 
-            Node* search = current_map.extract(cur_hash, match);
+            HashHook* search = current_map.extract(cur_hash, match);
             if(search == nullptr) search = target_map.extract(cur_hash, match);
 
             chechout_rehash();
 
             if(search == nullptr){
-                return false;
+                return nullptr;
             }else{
-                delete reinterpret_cast<HashNode*>(search);
                 --num_elements;
 
-                return true;
+                return static_cast<Entry*>(search);
             }
         }
     }
 
 
-    ~ProgressiveRehashMap() {
-        const auto dispose = [](Node* node) noexcept {
-            delete reinterpret_cast<HashNode*>(node);
+    template<typename Dispose>
+    void clear(const Dispose& dispose) noexcept {
+        static_assert(std::is_nothrow_invocable_v<const Dispose&, Entry*>);
+        const auto release = [&dispose](HashHook* node) noexcept {
+            dispose(static_cast<Entry*>(node));
         };
-
-        current_map.clear(dispose);
-        target_map.clear(dispose);
+        current_map.clear(release);
+        target_map.clear(release);
+        num_elements = 0;
+        rehashing = false;
     }
 };

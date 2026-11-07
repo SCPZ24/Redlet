@@ -10,14 +10,14 @@
 
 class HashTable{
 private:
-    Node** buckets = nullptr;
+    HashHook** buckets = nullptr;
 
     std::size_t num_buckets = 0;
 public:
     HashTable() = default;
 
     HashTable(size_t _size): num_buckets(_size){
-        buckets = static_cast<Node**>(std::calloc(_size, sizeof(Node*)));
+        buckets = static_cast<HashHook**>(std::calloc(_size, sizeof(HashHook*)));
 
         if(buckets == nullptr){
             throw std::system_error(errno, std::system_category(), "calloc");
@@ -25,9 +25,9 @@ public:
     }
 
     template<typename Match>
-    Node* find(std::size_t hash, const Match& match){
+    HashHook* find(std::size_t hash, const Match& match){
         const std::size_t bucket = hash & (num_buckets - 1);
-        Node* current_node = buckets[bucket];
+        HashHook* current_node = buckets[bucket];
 
         while(current_node != nullptr){
             if(current_node->hash == hash && match(current_node)){
@@ -40,7 +40,7 @@ public:
         return nullptr;
     }
 
-    void inline insert(Node* node){
+    void inline insert(HashHook* node){
         const std::size_t bucket = node->hash & (num_buckets - 1);
         
         node->next = buckets[bucket];
@@ -48,13 +48,13 @@ public:
     }
 
     template<typename Match>
-    Node* extract(std::size_t hash, const Match& match){
+    HashHook* extract(std::size_t hash, const Match& match){
         const std::size_t bucket = hash & (num_buckets - 1);
-        Node** ptr_current_node = &buckets[bucket];
+        HashHook** ptr_current_node = &buckets[bucket];
 
         while(*ptr_current_node != nullptr){
             if((*ptr_current_node)->hash == hash && match(*ptr_current_node)){
-                Node* temp = *ptr_current_node;
+                HashHook* temp = *ptr_current_node;
                 *ptr_current_node = temp->next;
                 temp->next = nullptr;
                 return temp;
@@ -77,7 +77,7 @@ public:
                 continue;
             }
 
-            Node* temp = buckets[current_bucket];
+            HashHook* temp = buckets[current_bucket];
             buckets[current_bucket] = temp->next;
             dst.insert(temp);
             --budget_node;
@@ -94,7 +94,7 @@ public:
     void clear(const Dispose& dispose) noexcept {
         for (std::size_t bucket = 0; bucket < num_buckets; ++bucket) {
             while (buckets[bucket] != nullptr) {
-                Node* node = buckets[bucket];
+                HashHook* node = buckets[bucket];
                 buckets[bucket] = node->next;
                 node->next = nullptr;
                 dispose(node);

@@ -6,21 +6,39 @@
 #include "progressive_rehash_map.hpp"
 
 
+using Entry = HashNode<std::string>;
+
+
 class Database{
 private:
-    ProgressiveRehashMap data;
+    ProgressiveRehashMap<Entry> data;
 
 public:
+    Database(): data() {}
+
     const std::string* get(std::string_view key){
-        return data.get(key);
+        const Entry* entry = data.find(key);
+        return entry ? &entry->value : nullptr;
     }
 
     void set(std::string_view key, std::string_view value){
-        data.set(key, value);
+        if(Entry* entry = data.find(key)){
+            entry->value = value;
+        }else{
+            data.insert(key, value);
+        }
     }
 
     bool del(std::string_view key){
-        return data.del(key);
+        Entry* entry = data.extract(key);
+        if(entry == nullptr) return false;
+        delete entry;
+        return true;
+    }
+
+
+    ~Database(){
+        data.clear([](Entry* entry) noexcept { delete entry; });
     }
 };
 
