@@ -36,3 +36,6 @@ redlet
 redlet-progressive-rehash
 redlet-sorted-set
 redlet-expire
+redlet-async-destroy
+redlet-async-destroy-16
+redlet-async-destroy-8

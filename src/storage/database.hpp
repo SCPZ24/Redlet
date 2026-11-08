@@ -64,6 +64,8 @@ private:
     }
 
     void destroy_sorted_set(SortedSet* sorted_set){
+        if(sorted_set == nullptr) return;
+
         try{
             thread_pool.submit([sorted_set]() -> void{
                 delete sorted_set;
