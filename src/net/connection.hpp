@@ -7,6 +7,7 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -15,7 +16,11 @@
 #include <system_error>
 
 
+class IdleQueue;
+
 class Connection{
+    friend class IdleQueue;
+
 private:
     int fd;
     bool want_read;
@@ -31,6 +36,12 @@ private:
     ReplyWriter reply;
 
     RespParser parser;
+
+    Connection* next = nullptr;
+    Connection* prev = nullptr;
+
+    // 单调时钟下的绝对过期时间，单位为毫秒，由 IdleQueue 在入队或刷新时设置。
+    std::int64_t timeout = 0;
 
     int inline parse_input() {
         while(true){

@@ -17,6 +17,8 @@
 
 #include "net/connection.hpp"
 #include "net/event_loop.hpp"
+#include "net/idle_queue.hpp"
+#include "util.hpp"
 
 
 class Server{
@@ -25,14 +27,17 @@ private:
     sockaddr_in sock_addr;
     EventLoop event_loop;
     std::unordered_map<int, Connection> connection_map;
+    IdleQueue idle_queue;
 
 
     void inline add_connection(int client_fd){
-        connection_map.try_emplace(client_fd,client_fd);
+        auto [it, inserted] = connection_map.try_emplace(client_fd, client_fd);
+        idle_queue.add(&it->second);
         event_loop.add(client_fd, EPOLLIN | EPOLLRDHUP);
     }
 
     void inline delete_connection(int client_fd){
+        idle_queue.unlink(&connection_map.at(client_fd));
         event_loop.remove(client_fd);
         connection_map.erase(client_fd);
     }
@@ -98,7 +103,7 @@ public:
         event_loop.add(listen_fd, EPOLLIN);
 
         while(true){
-            const int num_events = event_loop.wait();
+            const int num_events = event_loop.wait(DEFAULT_WAKE_DURATION);
             const auto& ready_events = event_loop.get_ready_events();
 
             for(int i = 0; i < num_events; ++i){
@@ -111,6 +116,8 @@ public:
                     }
                 }else{
                     Connection& cur_conn = connection_map.find(cur_fd)->second;
+
+                    idle_queue.reset(&cur_conn);
 
                     if(flag & EPOLLERR){
                         int socket_error = 0;
@@ -160,6 +167,11 @@ public:
                     }
                     event_loop.modify(cur_fd, events);
                 }
+            }
+
+            const std::int64_t now = monotonic_ms();
+            while(Connection* timeout_conn = idle_queue.takle_timeout(now)){
+                delete_connection(timeout_conn->get_fd());
             }
         }
     }

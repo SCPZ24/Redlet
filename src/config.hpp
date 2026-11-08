@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 
 inline constexpr char arity_error[] = "ERR wrong number of arguments";
 
@@ -25,3 +26,7 @@ inline constexpr size_t MINIMAL_NUM_BUCKETS = 4;
 
 inline constexpr size_t DEFAULT_BUDGET_NODE = 128;
 inline constexpr size_t DEFAULT_BUDGET_BUCKET = 256;
+
+inline constexpr size_t DEFAULT_WAKE_DURATION = 1000;
+
+inline constexpr std::int64_t DEFAULT_CONNECTION_TIMEOUT_MS = 60000; //1分钟
