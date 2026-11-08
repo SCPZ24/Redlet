@@ -35,3 +35,4 @@ examples/build-your-own-redis-src
 redlet
 redlet-progressive-rehash
 redlet-sorted-set
+redlet-expire

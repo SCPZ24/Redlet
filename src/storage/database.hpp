@@ -13,6 +13,7 @@
 #include "sorted_set.hpp"
 #include "entry.hpp"
 #include "expire_heap.hpp"
+#include "../concurrency/thread_pool.hpp"
 
 #include "../util.hpp"
 
@@ -39,6 +40,7 @@ class Database{
 private:
     ProgressiveRehashMap<Entry> data;
     ExpireHeap expire_heap;
+    ThreadPool thread_pool;
 
     Entry* find_live_entry(std::string_view key, std::int64_t now_ms){
         Entry* entry = data.find(key);
@@ -56,9 +58,20 @@ private:
         data.extract(entry->key);
         expire_heap.remove(entry);
         if(auto* sorted_set = std::get_if<SortedSet*>(&entry->value)){
-            delete *sorted_set;
+            destroy_sorted_set(*sorted_set);
         }
         delete entry;
+    }
+
+    void destroy_sorted_set(SortedSet* sorted_set){
+        try{
+            thread_pool.submit([sorted_set]() -> void{
+                delete sorted_set;
+            });
+        }catch(...){
+            std::cerr<<"Async destroy sorted set failed. Switching to sync destroy."<<std::endl;
+            delete sorted_set;
+        }
     }
 
 public:
@@ -88,7 +101,7 @@ public:
             SortedSet* old_set = nullptr;
             if(auto* sorted_set = std::get_if<SortedSet*>(&entry->value)) old_set = *sorted_set;
             entry->value = std::move(replacement);
-            delete old_set;
+            destroy_sorted_set(old_set);
         }else{
             entry = new Entry(key, std::move(replacement));
             data.insert(entry);

@@ -31,3 +31,5 @@ inline constexpr size_t DEFAULT_WAKE_DURATION = 1000;
 inline constexpr std::int64_t DEFAULT_CONNECTION_TIMEOUT_MS = 60000; //1分钟
 
 inline constexpr size_t DEFAULT_EXPIRE_BUDGET = 64;
+
+inline constexpr size_t DEFAULT_WORKER_COUNT = 1;
