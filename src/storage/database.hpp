@@ -6,17 +6,22 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include <optional>
+#include <limits>
 
 #include "progressive_rehash_map.hpp"
 #include "sorted_set.hpp"
 #include "entry.hpp"
 #include "expire_heap.hpp"
 
+#include "../util.hpp"
+
 enum class RequestStatus{
     OK,
     Missing,
     WrongType,
-    InvalidScore
+    InvalidScore,
+    InvalidExpire
 };
 
 struct GetResult{
@@ -35,11 +40,32 @@ private:
     ProgressiveRehashMap<Entry> data;
     ExpireHeap expire_heap;
 
+    Entry* find_live_entry(std::string_view key, std::int64_t now_ms){
+        Entry* entry = data.find(key);
+        if(entry == nullptr) return nullptr;
+
+        const auto expires_at = expire_heap.get_expire_time(entry);
+        if(expires_at && *expires_at <= now_ms){
+            erase_entry(entry);
+            return nullptr;
+        }
+        return entry;
+    }
+
+    void erase_entry(Entry* entry){
+        data.extract(entry->key);
+        expire_heap.remove(entry);
+        if(auto* sorted_set = std::get_if<SortedSet*>(&entry->value)){
+            delete *sorted_set;
+        }
+        delete entry;
+    }
+
 public:
     Database(): data() {}
 
     GetResult get(std::string_view key){
-        const Entry* entry = data.find(key);
+        const Entry* entry = find_live_entry(key, monotonic_ms());
         if(entry == nullptr) return {RequestStatus::Missing, nullptr};
 
         const auto* value = std::get_if<std::string>(&entry->value);
@@ -47,29 +73,34 @@ public:
         return {RequestStatus::OK, value};
     }
 
-    void set(std::string_view key, std::string_view value){
-        if(Entry* entry = data.find(key)){
-            if(auto* text = std::get_if<std::string>(&entry->value)){
-                *text = value;
-            }else{
-                SortedSet* sorted_set = std::get<SortedSet*>(entry->value);
-                entry->value = std::string(value);
-                delete sorted_set;
-            }
-        }else{
-            entry = new Entry(key, std::string(value));
-            data.insert(entry);
+    RequestStatus set(std::string_view key, std::string_view value,
+                      std::optional<std::int64_t> ttl_ms = std::nullopt){
+        const std::int64_t now = monotonic_ms();
+        if(ttl_ms && (*ttl_ms <= 0 || *ttl_ms > std::numeric_limits<std::int64_t>::max() - now)){
+            return RequestStatus::InvalidExpire;
         }
+
+        std::string replacement(value);
+        if(Entry* entry = find_live_entry(key, now)){
+            if(ttl_ms) expire_heap.set(entry, now + *ttl_ms);
+            else expire_heap.remove(entry);
+
+            SortedSet* old_set = nullptr;
+            if(auto* sorted_set = std::get_if<SortedSet*>(&entry->value)) old_set = *sorted_set;
+            entry->value = std::move(replacement);
+            delete old_set;
+        }else{
+            entry = new Entry(key, std::move(replacement));
+            data.insert(entry);
+            if(ttl_ms) expire_heap.set(entry, now + *ttl_ms);
+        }
+        return RequestStatus::OK;
     }
 
     bool del(std::string_view key){
-        Entry* entry = data.extract(key);
+        Entry* entry = find_live_entry(key, monotonic_ms());
         if(entry == nullptr) return false;
-
-        if(auto* sorted_set = std::get_if<SortedSet*>(&entry->value)){
-            delete *sorted_set;
-        }
-        delete entry;
+        erase_entry(entry);
         return true;
     }
 
@@ -79,7 +110,7 @@ public:
         }
         if(members.empty()) return {RequestStatus::OK, 0};
 
-        Entry* entry = data.find(key);
+        Entry* entry = find_live_entry(key, monotonic_ms());
         if(entry == nullptr){
             entry = new Entry(key, new SortedSet);
             data.insert(entry);
@@ -95,7 +126,7 @@ public:
     }
 
     RequestResult<std::size_t> zrem(std::string_view key, const std::vector<std::string_view>& members){
-        Entry* entry = data.find(key);
+        Entry* entry = find_live_entry(key, monotonic_ms());
         if(entry == nullptr) return {RequestStatus::OK, 0};
         auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
         if(sorted_set == nullptr) return {RequestStatus::WrongType, 0};
@@ -104,12 +135,12 @@ public:
         for(const auto member : members){
             removed += (*sorted_set)->remove(member);
         }
-        if((*sorted_set)->size() == 0) del(key);
+        if((*sorted_set)->size() == 0) erase_entry(entry);
         return {RequestStatus::OK, removed};
     }
 
     RequestResult<double> zscore(std::string_view key, std::string_view member){
-        Entry* entry = data.find(key);
+        Entry* entry = find_live_entry(key, monotonic_ms());
         if(entry == nullptr) return {RequestStatus::Missing, 0};
         auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
         if(sorted_set == nullptr) return {RequestStatus::WrongType, 0};
@@ -119,7 +150,7 @@ public:
     }
 
     RequestResult<std::vector<Member>> zrange(std::string_view key, std::int64_t start, std::int64_t end){
-        Entry* entry = data.find(key);
+        Entry* entry = find_live_entry(key, monotonic_ms());
         if(entry == nullptr) return {RequestStatus::OK, {}};
         auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
         if(sorted_set == nullptr) return {RequestStatus::WrongType, {}};
@@ -127,7 +158,7 @@ public:
     }
 
     RequestResult<std::size_t> zrank(std::string_view key, std::string_view member){
-        Entry* entry = data.find(key);
+        Entry* entry = find_live_entry(key, monotonic_ms());
         if(entry == nullptr) return {RequestStatus::Missing, 0};
         auto* sorted_set = std::get_if<SortedSet*>(&entry->value);
         if(sorted_set == nullptr) return {RequestStatus::WrongType, 0};
@@ -136,7 +167,42 @@ public:
         return {RequestStatus::OK, *rank};
     }
 
-    // TODO: 实现 SET Key Val PX Timeout, PEXPIRE Key Timeout, PTTL Key, PERSIST Key
+    RequestResult<bool> pexpire(std::string_view key, std::int64_t ttl_ms){
+        const std::int64_t now = monotonic_ms();
+        if(ttl_ms > std::numeric_limits<std::int64_t>::max() - now){
+            return {RequestStatus::InvalidExpire, false};
+        }
+        Entry* entry = find_live_entry(key, now);
+        if(entry == nullptr) return {RequestStatus::OK, false};
+
+        if(ttl_ms <= 0) erase_entry(entry);
+        else expire_heap.set(entry, now + ttl_ms);
+        return {RequestStatus::OK, true};
+    }
+
+    std::int64_t pttl(std::string_view key){
+        const std::int64_t now = monotonic_ms();
+        Entry* entry = find_live_entry(key, now);
+        if(entry == nullptr) return -2;
+        const auto expires_at = expire_heap.get_expire_time(entry);
+        return expires_at ? *expires_at - now : -1;
+    }
+
+    bool persist(std::string_view key){
+        Entry* entry = find_live_entry(key, monotonic_ms());
+        return entry != nullptr && expire_heap.remove(entry);
+    }
+
+    std::size_t expire_due(std::int64_t now_ms, std::size_t budget = DEFAULT_EXPIRE_BUDGET){
+        std::size_t removed = 0;
+        while(removed < budget){
+            const HeapItem* item = expire_heap.top();
+            if(item == nullptr || item->expires_time > now_ms) break;
+            erase_entry(item->map_entry);
+            ++removed;
+        }
+        return removed;
+    }
 
 
     ~Database(){

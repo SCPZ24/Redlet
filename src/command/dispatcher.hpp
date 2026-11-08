@@ -34,6 +34,14 @@ bool inline dispatch(ByteRange request, const std::vector<ArgumentRange>& argume
     };
     constexpr char wrong_type[] = "WRONGTYPE Operation against a key holding the wrong kind of value";
     constexpr char invalid_score[] = "ERR value is not a valid float";
+    constexpr char invalid_integer[] = "ERR value is not an integer or out of range";
+    const auto parse_integer = [](std::string_view text, std::int64_t& value) {
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+        if(result.ec != std::errc{} || result.ptr != text.data() + text.size()) return false;
+        char buffer[21];
+        const auto formatted = std::to_chars(buffer, buffer + sizeof(buffer), value);
+        return text == std::string_view(buffer, static_cast<std::size_t>(formatted.ptr - buffer));
+    };
     const auto write_score = [&](double score) {
         char buffer[64];
         const auto result = std::to_chars(buffer, buffer + sizeof(buffer), score);
@@ -57,9 +65,44 @@ bool inline dispatch(ByteRange request, const std::vector<ArgumentRange>& argume
         return reply.bulk_str(result.value->data(), result.value->size());
     }
     if(matches("SET")){
-        if(arguments.size() != 3) return reply.error(arity_error, sizeof(arity_error) - 1);
-        Database.set(argument(1), argument(2));
+        if(arguments.size() != 3 && arguments.size() != 5){
+            return reply.error(arity_error, sizeof(arity_error) - 1);
+        }
+        std::optional<std::int64_t> ttl_ms;
+        if(arguments.size() == 5){
+            if(!matches("PX", 3)) return reply.error("ERR syntax error", 16);
+            std::int64_t parsed;
+            if(!parse_integer(argument(4), parsed)){
+                return reply.error(invalid_integer, sizeof(invalid_integer) - 1);
+            }
+            ttl_ms = parsed;
+        }
+        if(Database.set(argument(1), argument(2), ttl_ms) == RequestStatus::InvalidExpire){
+            constexpr char error[] = "ERR invalid expire time in 'set' command";
+            return reply.error(error, sizeof(error) - 1);
+        }
         return reply.raw_str("OK", 2);
+    }
+    if(matches("PEXPIRE")){
+        if(arguments.size() != 3) return reply.error(arity_error, sizeof(arity_error) - 1);
+        std::int64_t ttl_ms;
+        if(!parse_integer(argument(2), ttl_ms)){
+            return reply.error(invalid_integer, sizeof(invalid_integer) - 1);
+        }
+        const auto result = Database.pexpire(argument(1), ttl_ms);
+        if(result.status == RequestStatus::InvalidExpire){
+            constexpr char error[] = "ERR invalid expire time in 'pexpire' command";
+            return reply.error(error, sizeof(error) - 1);
+        }
+        return reply.integer(result.value);
+    }
+    if(matches("PTTL")){
+        if(arguments.size() != 2) return reply.error(arity_error, sizeof(arity_error) - 1);
+        return reply.integer(Database.pttl(argument(1)));
+    }
+    if(matches("PERSIST")){
+        if(arguments.size() != 2) return reply.error(arity_error, sizeof(arity_error) - 1);
+        return reply.integer(Database.persist(argument(1)));
     }
     if(matches("DEL")){
         if(arguments.size() < 2) return reply.error(arity_error, sizeof(arity_error) - 1);
@@ -113,17 +156,9 @@ bool inline dispatch(ByteRange request, const std::vector<ArgumentRange>& argume
         if(arguments.size() > 5 || (arguments.size() == 5 && !matches("WITHSCORES", 4))){
             return reply.error("ERR syntax error", 16);
         }
-        const auto parse_index = [](std::string_view text, std::int64_t& value) {
-            const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
-            if(result.ec != std::errc{} || result.ptr != text.data() + text.size()) return false;
-            char buffer[21];
-            const auto formatted = std::to_chars(buffer, buffer + sizeof(buffer), value);
-            return text == std::string_view(buffer, static_cast<std::size_t>(formatted.ptr - buffer));
-        };
         std::int64_t start, end;
-        if(!parse_index(argument(2), start) || !parse_index(argument(3), end)){
-            constexpr char error[] = "ERR value is not an integer or out of range";
-            return reply.error(error, sizeof(error) - 1);
+        if(!parse_integer(argument(2), start) || !parse_integer(argument(3), end)){
+            return reply.error(invalid_integer, sizeof(invalid_integer) - 1);
         }
         const auto result = Database.zrange(argument(1), start, end);
         if(result.status == RequestStatus::WrongType) return reply.error(wrong_type, sizeof(wrong_type) - 1);

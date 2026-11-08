@@ -106,6 +106,9 @@ public:
             const int num_events = event_loop.wait(DEFAULT_WAKE_DURATION);
             const auto& ready_events = event_loop.get_ready_events();
 
+            std::int64_t now = monotonic_ms();
+            Database.expire_due(now);
+
             for(int i = 0; i < num_events; ++i){
                 const int cur_fd = ready_events[i].data.fd;
                 const uint32_t flag = ready_events[i].events;
@@ -169,7 +172,7 @@ public:
                 }
             }
 
-            const std::int64_t now = monotonic_ms();
+            now = monotonic_ms();
             while(Connection* timeout_conn = idle_queue.takle_timeout(now)){
                 delete_connection(timeout_conn->get_fd());
             }
