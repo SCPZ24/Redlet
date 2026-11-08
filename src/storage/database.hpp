@@ -9,8 +9,8 @@
 
 #include "progressive_rehash_map.hpp"
 #include "sorted_set.hpp"
-
-using Entry = HashNode<std::variant<std::string, SortedSet*>>;
+#include "entry.hpp"
+#include "expire_heap.hpp"
 
 enum class RequestStatus{
     OK,
@@ -33,6 +33,7 @@ struct RequestResult{
 class Database{
 private:
     ProgressiveRehashMap<Entry> data;
+    ExpireHeap expire_heap;
 
 public:
     Database(): data() {}
@@ -134,6 +135,8 @@ public:
         if(!rank) return {RequestStatus::Missing, 0};
         return {RequestStatus::OK, *rank};
     }
+
+    // TODO: 实现 SET Key Val PX Timeout, PEXPIRE Key Timeout, PTTL Key, PERSIST Key
 
 
     ~Database(){

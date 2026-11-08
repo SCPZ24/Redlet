@@ -17,7 +17,6 @@ inline constexpr int MAX_EPOLL_EVENTS = 1024;
 inline constexpr int INPUT_BUFFER_SIZE = 1024;
 inline constexpr int OUTPUT_BUFFER_SIZE = 1024;
 
-
 inline constexpr double EXPAND_BOUND = 1;
 inline constexpr double SHRINK_BOUND = 0.25;
 
@@ -30,3 +29,5 @@ inline constexpr size_t DEFAULT_BUDGET_BUCKET = 256;
 inline constexpr size_t DEFAULT_WAKE_DURATION = 1000;
 
 inline constexpr std::int64_t DEFAULT_CONNECTION_TIMEOUT_MS = 60000; //1分钟
+
+inline constexpr size_t DEFAULT_EXPIRE_BUDGET = 64;
