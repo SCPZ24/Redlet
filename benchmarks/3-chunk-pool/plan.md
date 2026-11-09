@@ -189,7 +189,7 @@ public:
 | 构造 | 读取并验证页大小、参数和上限；不预触全部数据页；初始化错误明确报错 |
 | `try_acquire` | Warm 优先，再 Cold，最后按需增长；返回块已脱链，`sent=written=0`，状态 InUse；容量/映射/元数据分配失败返回空指针并记原因 |
 | `release` | 调用方先脱离使用队列；清游标、减借用计数、加入 Warm 队列；只改元数据，不做系统回收 |
-| `maintain` | 只在网络事件循环线程执行；按时间、页数、扫描量和系统调用预算做回收 |
+| `maintain` | 只在网络事件循环线程执行；按时间、advice 调用数和 Slab 解除数量预算做回收 |
 | 析构 | 正常路径要求借用计数为零；释放剩余映射，禁止抛异常 |
 
 运行期可恢复的池分配失败要转换成返回值，不能让 `std::bad_alloc` 或 `mmap` 失败直接越过事件循环终止服务。初始化失败与正常运行耗尽分开处理。`mmap` 成功不保证之后触页永不遭遇系统 OOM，逻辑容量上限也不提供这种保证。
@@ -393,9 +393,7 @@ if (base == MAP_FAILED) {
 | `warm_target_chunks` | 64 | 进入回收后降到此值才停止 |
 | `warm_min_idle_ms` | 2000 | 避免刚归还就产生下一次缺页 |
 | `maintenance_interval_ms` | 100 | 空闲时也能推进回收 |
-| `max_discard_pages_per_tick` | 256 | 限制一轮页级回收工作量 |
-| `max_advice_calls_per_tick` | 32 | 避免零散页产生大量系统调用 |
-| `max_scan_nodes_per_tick` | 512 | 无法回收时也不能无限扫描 |
+| `max_advice_calls_per_tick` | 32 | 第一版逐页回收，同时限制页数与系统调用次数 |
 | `maintenance_budget_us` | 200 | 两次工作项之间检查的软时间预算 |
 | `empty_slab_idle_ms` | 10000 | 整个 Slab 持续无借用后的解除映射等待 |
 | `keep_empty_slabs` | 最多 1 | 备用地址映射，不代表预留全部物理页 |
@@ -413,19 +411,19 @@ Slab 借用数降到 0 时记录 `empty_since_ms`，加入整体空闲候选结�
 
 Warm 数量超过高水位后设置 `reclaim_active=true`，**保留这个状态直到 Warm 降到目标值**。不能每轮只检查是否还超过高水位，否则回收到 127 就停了。
 
-从最老 Warm 页开始，选择空闲时间达标的页：
+从最老 Warm 页开始，选择空闲时间达标的页。队列按归还时间排序，最老页未到期时结束本轮页回收。单次 advice 失败也结束本轮页回收，保留节点及原时间顺序。每轮检查次数受调用预算及一次到期检查约束。
 
 ```cpp
 if (::madvise(chunk->page_ptr, page_size, MADV_DONTNEED) == 0) {
     // 从 Warm 摘除，改为 FreeCold，加入 Cold，更新统计。
 } else {
-    // 记录 errno，逻辑上仍为 Warm；本轮停止或跳过，避免失败自旋。
+    // 记录 errno，逻辑上仍为 Warm；停止本轮页回收。
 }
 ```
 
 调用前再次确认 `FreeWarm`、地址对齐、范围完全属于无人使用的数据页。成功后不为“确认清零”读写该页，避免主动重新触页。[madvise][madvise]
 
-第一版可以逐页回收；把物理地址相邻且都空闲的页合并为一次 advice 属于后续低风险优化。不能因为链表相邻就假设虚拟地址相邻，也不能让合并范围跨过 InUse 页。
+第一版逐页回收，每次 advice 处理一页，因此成功丢弃页数由调用次数减失败次数得到。以后若合并连续页，再增加独立页数预算及成功页数统计。合并需要检查页的地址连续性及空闲状态，范围必须避开 InUse 页。
 
 失败时保持保守逻辑账目。统计“成功提交丢弃的字节数”不等于精确测得的 RSS 降幅；以 OS 指标复核。
 
@@ -478,7 +476,7 @@ epoll_wait(wait_timeout)
 | 池容量 | Slab 数、mapped bytes、控制块数量/估算字节、InUse/Warm/Cold 数量 |
 | 借还 | Warm/Cold 命中次数、扩容次数、分配失败次数及原因、借用峰值 |
 | 输出 | 全局 pending bytes、每连接借页数、payload 追加复制字节、发送成功字节 |
-| 回收 | advice/munmap 次数与失败数、成功丢弃页数、维护耗时、扫描量、预算耗尽次数 |
+| 回收 | advice/munmap 次数与失败数、由调用结果推导的成功丢弃页数、维护耗时、预算耗尽次数 |
 | 发送 | sendmsg 调用数、短写、EAGAIN、每次 iovec 数量与提交字节 |
 
 不把 `Cold * page_size` 称为“已节省 RSS”。OS 测量方法及低扰动采样安排在 [note.md](./note.md)。
@@ -511,7 +509,7 @@ epoll_wait(wait_timeout)
 - [ ] madvise 失败仍保守留在 Warm；munmap 失败不销毁控制块。
 - [ ] 每个 Slab 保留一个活页，其他页仍能回收；活页内容不变。
 - [ ] Cold 重新借用后只发送新数据，不依赖旧内容，不需要重新 mmap。
-- [ ] 高低水位滞回跨轮持续，空闲不足时不忙等；页数/调用数/扫描预算都有效。
+- [ ] 高低水位滞回跨轮持续，空闲不足或 advice 失败时停止本轮页回收；调用数、Slab 解除数量和时间预算都有效。
 - [ ] 完全空闲 Slab 解除映射后，空闲链表和计数没有悬挂节点；持续扩缩多轮。
 - [ ] 回归原有协议、TTL、Sorted Set、异步销毁及连接测试。
 - [ ] ASan/UBSan 正确性测试与无 sanitizer 的 Release 性能测试分开。
