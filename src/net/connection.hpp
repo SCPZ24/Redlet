@@ -30,8 +30,7 @@ private:
     std::string incoming;
     std::size_t consumed_pos = 0;
 
-    std::string outcoming;
-    std::size_t delivered_pos = 0;
+    OutputBuffer outcoming;
 
     ReplyWriter reply;
 
@@ -111,7 +110,7 @@ public:
             if(err == EAGAIN || err == EWOULDBLOCK){
                 return 0;
             }
-            throw std::system_error(err, std::generic_category(), "read");
+            return err;
         }else if(rd == 0){
             want_read = false;
             if(!want_write){
@@ -127,15 +126,18 @@ public:
     }
 
     int write_buffer(){
-        if(delivered_pos != 0){
-            outcoming.erase(0, delivered_pos);
-            delivered_pos = 0;
-        }
-
-        const size_t write_count = std::min(outcoming.size(), static_cast<std::size_t>(OUTPUT_BUFFER_SIZE));
+        if(outcoming.empty()) return 0;
+        static const long system_iov_max = ::sysconf(_SC_IOV_MAX);
+        if(system_iov_max <= 0) return EINVAL;
+        iovec vectors[32]{};
+        const auto capacity = std::min(std::size_t{32}, static_cast<std::size_t>(system_iov_max));
+        const auto batch = outcoming.build_iovecs(vectors, capacity, OUTPUT_BUFFER_SIZE);
+        msghdr message{};
+        message.msg_iov = vectors;
+        message.msg_iovlen = batch.count;
         ssize_t wr;
         do{
-            wr = send(fd, outcoming.data(), write_count, MSG_NOSIGNAL);
+            wr = sendmsg(fd, &message, MSG_NOSIGNAL);
         }while(wr < 0 && errno == EINTR);
 
         if(wr < 0){
@@ -143,17 +145,14 @@ public:
             if(err == EAGAIN || err == EWOULDBLOCK){
                 return 0;
             }
-            throw std::system_error(err, std::generic_category(), "write");
+            return err;
         }else if(wr == 0){
             return 0;
         }else{
-            delivered_pos += wr;
+            outcoming.consume(static_cast<std::size_t>(wr), monotonic_ms());
 
-            if(delivered_pos == outcoming.size()){
+            if(outcoming.empty()){
                 want_write = false;
-
-                outcoming.clear();
-                delivered_pos = 0;
 
                 if(want_read == false){
                     want_close = true;
@@ -189,8 +188,8 @@ public:
 
 #ifdef test
 
-    const std::string& pending_output() const {
-        return outcoming;
+    std::string pending_output() const {
+        return outcoming.flatten_for_test();
     }
 
     ByteRange argument(std::size_t index) const {

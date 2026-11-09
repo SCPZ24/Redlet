@@ -7,19 +7,22 @@
 
 template<typename Encode>
 void check_limit(std::size_t encoded_size, Encode encode) {
-    std::string output(MAX_OUTPUT_BYTES - encoded_size, 'x');
+    OutputBuffer output;
+    assert(output.append(std::string(MAX_OUTPUT_BYTES - encoded_size, 'x')));
     ReplyWriter reply(output);
     assert(encode(reply));
-    assert(output.size() == MAX_OUTPUT_BYTES);
+    assert(output.pending_bytes() == MAX_OUTPUT_BYTES);
 
-    output.assign(MAX_OUTPUT_BYTES - encoded_size + 1, 'x');
-    const auto before = output;
+    output.clear();
+    assert(output.append(std::string(MAX_OUTPUT_BYTES - encoded_size + 1, 'x')));
+    const auto before = output.flatten_for_test();
     assert(!encode(reply));
-    assert(output == before);
+    assert(output.flatten_for_test() == before);
 }
 
 int main() {
-    std::string output;
+    chunk_pool.initialize();
+    OutputBuffer output;
     ReplyWriter reply(output);
     assert(reply.raw_str("OK", 2));
     assert(reply.error("ERR unknown command", 19));
@@ -33,7 +36,7 @@ int main() {
                            ":-9223372036854775808\r\n:9223372036854775807\r\n$5\r\n";
     expected.append("a\0b\r\n", 5);
     expected.append("\r\n$0\r\n\r\n$-1\r\n");
-    assert(output == expected);
+    assert(output.flatten_for_test() == expected);
 
     // A complete MGET-style RESP2 reply, including a missing key.
     output.clear();
@@ -41,16 +44,16 @@ int main() {
     assert(reply.bulk_str("v1", 2));
     assert(reply.null_bulk());
     assert(reply.bulk_str("v3", 2));
-    assert(output == "*3\r\n$2\r\nv1\r\n$-1\r\n$2\r\nv3\r\n");
+    assert(output.flatten_for_test() == "*3\r\n$2\r\nv1\r\n$-1\r\n$2\r\nv3\r\n");
 
     output.clear();
     assert(reply.array_header(0));
-    assert(output == "*0\r\n");
+    assert(output.flatten_for_test() == "*0\r\n");
 
     output.clear();
     const auto max_count = std::numeric_limits<std::size_t>::max();
     assert(reply.array_header(max_count));
-    assert(output == "*" + std::to_string(max_count) + "\r\n");
+    assert(output.flatten_for_test() == "*" + std::to_string(max_count) + "\r\n");
 
     check_limit(5, [](ReplyWriter& writer) { return writer.raw_str("OK", 2); });
     check_limit(6, [](ReplyWriter& writer) { return writer.error("ERR", 3); });
@@ -62,6 +65,20 @@ int main() {
     output.clear();
     const std::string large(MAX_BULK_BYTES, 'v');
     assert(reply.bulk_str(large.data(), large.size()));
-    assert(output == "$" + std::to_string(large.size()) + "\r\n" + large + "\r\n");
+    assert(output.flatten_for_test() == "$" + std::to_string(large.size()) + "\r\n" + large + "\r\n");
+
+    output.clear();
+    const auto oversized = std::numeric_limits<std::size_t>::max();
+    assert(!reply.raw_str("x", oversized));
+    assert(!reply.error("x", oversized));
+    assert(!reply.bulk_str("x", oversized));
+    assert(output.empty());
+
+    // Split RESP framing across a page boundary and compare the complete bytes.
+    const std::string prefix(chunk_pool.chunk_size() - 2, 'p');
+    assert(output.append(prefix));
+    assert(reply.bulk_str("a\0b", 3));
+    const std::string binary("a\0b", 3);
+    assert(output.flatten_for_test() == prefix + "$3\r\n" + binary + "\r\n");
     std::cout << "ReplyWriter checks passed\n";
 }

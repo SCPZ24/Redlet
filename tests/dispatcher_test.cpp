@@ -11,11 +11,16 @@ bool execute(const std::vector<std::string>& args, std::string& output) {
     RespParser parser;
     ByteRange request(input.data(), input.size());
     assert(parser.parse(request) == ParseStatus::Complete);
-    ReplyWriter reply(output);
-    return dispatch(request, parser.arguments(), reply);
+    OutputBuffer buffer;
+    assert(buffer.append(output));
+    ReplyWriter reply(buffer);
+    const bool success = dispatch(request, parser.arguments(), reply);
+    output = buffer.flatten_for_test();
+    return success;
 }
 
 int main() {
+    chunk_pool.initialize();
     std::string output;
     const auto check = [&](const std::vector<std::string>& args, const std::string& expected) {
         output.clear();

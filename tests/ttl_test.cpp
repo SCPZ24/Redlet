@@ -16,10 +16,10 @@ std::string execute(const std::vector<std::string>& args) {
     RespParser parser;
     ByteRange request(input.data(), input.size());
     assert(parser.parse(request) == ParseStatus::Complete);
-    std::string output;
+    OutputBuffer output;
     ReplyWriter reply(output);
     assert(dispatch(request, parser.arguments(), reply));
-    return output;
+    return output.flatten_for_test();
 }
 
 void check_heap() {
@@ -187,6 +187,7 @@ void check_dispatcher() {
 }
 
 int main() {
+    chunk_pool.initialize();
     check_heap();
     check_database();
     check_dispatcher();

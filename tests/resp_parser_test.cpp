@@ -1,4 +1,6 @@
+#ifndef test
 #define test
+#endif
 #include "../src/protocol/resp_parser.hpp"
 #include "../src/net/connection.hpp"
 #undef test
@@ -154,6 +156,7 @@ void buffered_partial_successor() {
 }
 
 int main() {
+    chunk_pool.initialize();
     fragmentation();
     invalid_inputs();
     limits();

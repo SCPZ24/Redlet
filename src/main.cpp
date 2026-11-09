@@ -6,6 +6,7 @@
 
 int main() {
     try {
+        chunk_pool.initialize();
         Server server;
         std::cout << "Redlet listening on 127.0.0.1:" << LISTENTING_PORT << std::endl;
         server.run();

@@ -6,6 +6,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#include <cerrno>
+#include <system_error>
+#include <sys/mman.h>
+
 class ChunkPool;
 
 class PageSlab{
@@ -29,16 +33,35 @@ private:
     PageSlab* empty_prev = nullptr;
     PageSlab* empty_next = nullptr;
     std::int64_t empty_since_ms = 0;
-    bool in_empty_queue = false;
 
-    // 仅在无借用块时调用。失败保留映射，成功清空映射句柄以免重复解除。
-    bool try_unmap() noexcept;
+    // 调用方保证映射有效且无借用块。失败保留映射，成功清空映射句柄。
+    bool try_unmap() noexcept {
+        if(::munmap(base, bytes) != 0) return false;
+        base = nullptr;
+        return true;
+    }
 
 public:
-    // mmap 数据区并初始化每个 CCB，但不预触数据页。
+    // page_size 由 ChunkPool 初始化时校验；这里 mmap 数据区并初始化 CCB。
     // 构造失败抛出异常，由 ChunkPool 的增长路径转换成分配失败。
-    explicit PageSlab(std::size_t page_size);
-    ~PageSlab() noexcept;
+    explicit PageSlab(std::size_t page_size) {
+        bytes = page_size * chunk_count;
+        void* mapping = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE,
+                               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if(mapping == MAP_FAILED){
+            throw std::system_error(errno, std::generic_category(), "mmap Slab");
+        }
+        base = static_cast<std::byte*>(mapping);
+        for(std::size_t i = 0; i < controls.size(); ++i){
+            controls[i].slab = this;
+            controls[i].page_ptr = base + i * page_size;
+            controls[i].state = FreeCold;
+        }
+    }
+
+    ~PageSlab() noexcept {
+        if(base) try_unmap();
+    }
 
     PageSlab(const PageSlab&) = delete;
     PageSlab& operator=(const PageSlab&) = delete;

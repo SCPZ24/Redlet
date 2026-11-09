@@ -103,7 +103,10 @@ public:
         event_loop.add(listen_fd, EPOLLIN);
 
         while(true){
-            const int num_events = event_loop.wait(DEFAULT_WAKE_DURATION);
+            const auto until_maintenance = std::max(std::int64_t{0},
+                chunk_pool.next_maintenance_ms() - monotonic_ms());
+            const auto wait_ms = std::min(static_cast<std::int64_t>(DEFAULT_WAKE_DURATION), until_maintenance);
+            const int num_events = event_loop.wait(static_cast<int>(wait_ms));
             const auto& ready_events = event_loop.get_ready_events();
 
             std::int64_t now = monotonic_ms();
@@ -129,7 +132,7 @@ public:
                                       &socket_error, &error_length) == -1){
                             throw std::system_error(errno, std::generic_category(), "getsockopt SO_ERROR");
                         }else if(socket_error != 0){
-                            throw std::system_error(socket_error, std::generic_category(), "socket SO_ERROR");
+                            std::cerr << "socket fd=" << cur_fd << " error=" << socket_error << '\n';
                         }else{
                             std::cerr << "EPOLLERR fd=" << cur_fd
                                       << ": no pending SO_ERROR\n";
@@ -176,6 +179,8 @@ public:
             while(Connection* timeout_conn = idle_queue.takle_timeout(now)){
                 delete_connection(timeout_conn->get_fd());
             }
+            now = monotonic_ms();
+            if(now >= chunk_pool.next_maintenance_ms()) chunk_pool.maintain(now);
         }
     }
 
