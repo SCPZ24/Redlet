@@ -39,3 +39,4 @@ redlet-expire
 redlet-async-destroy
 redlet-async-destroy-16
 redlet-async-destroy-8
+redlet-64kb-buffer
