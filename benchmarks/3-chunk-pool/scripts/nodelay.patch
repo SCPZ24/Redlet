@@ -1,0 +1,25 @@
+diff --git a/src/server.hpp b/src/server.hpp
+index c27c6e2..ab937c0 100644
+--- a/src/server.hpp
++++ b/src/server.hpp
+@@ -6,6 +6,7 @@
+ #include <fcntl.h>
+ #include <iostream>
+ #include <netinet/in.h>
++#include <netinet/tcp.h>
+ #include <sys/socket.h>
+ #include <sys/epoll.h>
+ #include <system_error>
+@@ -56,6 +57,12 @@ private:
+         while(true){
+             const int client_fd = accept(listen_fd, nullptr, nullptr);
+             if(client_fd >= 0){
++                const int nodelay = 1;
++                if(setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(nodelay)) == -1){
++                    const int error = errno;
++                    close(client_fd);
++                    throw std::system_error(error, std::generic_category(), "setsockopt TCP_NODELAY");
++                }
+                 set_nonblock(client_fd);
+                 add_connection(client_fd);
+                 continue;

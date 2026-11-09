@@ -40,3 +40,10 @@ redlet-async-destroy
 redlet-async-destroy-16
 redlet-async-destroy-8
 redlet-64kb-buffer
+redlet-chunk-pool
+redlet-64kb-buffer-nodelay
+redlet-chunk-pool-nodelay
+
+# Chunk-pool experiment results and intermediate output
+/benchmarks/3-chunk-pool/results/
+/benchmarks/3-chunk-pool/scripts/__pycache__/
